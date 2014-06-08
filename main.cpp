@@ -5,20 +5,22 @@ using namespace std;
 //---------------------------------------------------------------------------
 
 // размер файла
-long filesize(FILE *stream)
+long filesize(ifstream &stream)
 {
 	long curpos, length;
-	curpos = ftell(stream);
-	fseek(stream, 0L, SEEK_END);
-	length = ftell(stream);
-	fseek(stream, curpos, SEEK_SET);
+	curpos = stream.tellg();
+	stream.seekg(0, ios::end);
+	length = stream.tellg();
+	stream.seekg(curpos, ios::beg);
 	return length;
 }
 
 // функция, реализующая работу ГОСТ 28147-89 в режиме простой замены
 void modeSimpRep(int mode, char* fnameIn, char* fnameOut)
 {
-	FILE *f_begin, *f_end; // исходный и выходной файлы 
+	ifstream inFile(fnameIn, ios::binary | ios::in);
+	ofstream outFile(fnameOut, ios::binary | ios::out);
+
 	//таблица замен
 	unsigned char RepTable[8][16] =
 	{
@@ -48,53 +50,50 @@ void modeSimpRep(int mode, char* fnameIn, char* fnameOut)
 
 	unsigned long N1=0, N2=0, SUM232=0; // накопители N1, N2, и сумматор
 
-	fopen_s(&f_begin, fnameIn,"rb");
-	fopen_s (&f_end, fnameOut,"wb");
-
 	// количество блоков
 	float count_bloks;
-	count_bloks = 8*filesize(f_begin)/64.0;
+	count_bloks = 8*filesize(inFile)/64.0;
 	int block = count_bloks;
 	if (count_bloks-block>0) 
 		block++;
 
 	int sh;
-	if (filesize(f_begin)>=4) 
+	if (filesize(inFile)>=4) 
 		sh = 4; 
-	else sh = filesize(f_begin);
+	else sh = filesize(inFile);
 	int sh1 = 0;
-	int flag=0;
+	int end_file = 0;
 
 	// считывание и преобразование блоков
 	for (int i=0; i<block; i++)
 	{
 		// записываем в накопитель N1
 		for (int q=0; q<4; q++) *((unsigned char*)&N+q) = 0x00;
-		if ((sh1+sh)<filesize(f_begin))
+		if ((sh1+sh)<filesize(inFile))
 		{
-			fread(N,sh,1,f_begin);
+			inFile.read(N, sh);
 			sh1+=sh;
 		}
 		else
 		{
-			sh=filesize(f_begin)-sh1;
-			fread (N,sh,1,f_begin);
-			flag=1;
+			sh=filesize(inFile)-sh1;
+			inFile.read(N, sh);
+			end_file = 1;
 		}
 		N1 = *((unsigned long *)&N);
 		// записываем в накопитель N2
 		for (int q=0; q<4; q++) *((unsigned char*)&N+q) = 0x00;
-		if ((sh1+sh)<filesize(f_begin))
+		if ((sh1+sh)<filesize(inFile))
 		{
-			fread (N,sh,1,f_begin);
+			inFile.read(N, sh);
 			sh1+=sh;
 		}
 		else
 		{
-			if (flag==0)
+			if (end_file == 0)
 			{
-				sh=filesize(f_begin)-sh1;
-				fread (N,sh,1,f_begin);
+				sh=filesize(inFile)-sh1;
+				inFile.read(N, sh);
 			} 
 		}
 		N2 = *((unsigned long *)&N);
@@ -143,12 +142,14 @@ void modeSimpRep(int mode, char* fnameIn, char* fnameOut)
 				if (k<24)
 				{
 					c++;
-					if (c>7) c = 0;
+					if (c>7)
+						c = 0;
 				}
 				else
 				{
 					c--;
-					if (c<0) c = 7;
+					if (c<0)
+						c = 7;
 				}
 			}
 			else
@@ -156,32 +157,34 @@ void modeSimpRep(int mode, char* fnameIn, char* fnameOut)
 				if (k<8)
 				{
 					c++;
-					if (c>7) c = 0;
+					if (c>7)
+						c = 0;
 				}
 				else
 				{
 					c--;
-					if (c<0) c = 7;
+					if (c<0)
+						c = 7;
 				}
 			}
 		}
 		N2 = SUM232;
 
 		// вывод результата в файл
-		char sym_rez;
-		for (int q=0; q<=3; q++)
+		char sum_rez;
+		for (int q=0; q<4; q++)
 		{
-			sym_rez = *((unsigned char*)&N1+q);
-			fprintf(f_end, "%c", sym_rez);
+			sum_rez = *((unsigned char*)&N1+q);
+			outFile.write(&sum_rez, sizeof(char));
 		}
-		for (int q=0; q<=3; q++)
+		for (int q=0; q<4; q++)
 		{
-			sym_rez = *((unsigned char*)&N2+q);
-			fprintf(f_end, "%c", sym_rez);
+			sum_rez = *((unsigned char*)&N2+q);
+			outFile.write(&sum_rez, sizeof(char));
 		}
 	}
-	fclose (f_begin);
-	fclose (f_end);
+	inFile.close();
+	outFile.close();
 }
 
 //---------------------------------------------------------------------------
@@ -193,7 +196,6 @@ int main(int argc, char** argv)
 	setlocale(LC_ALL, "rus");
 	do
 	{
-		system("cls");
 		cout<<"ГОСТ28147-89\nВыберите действие:\n1 - зашифровать файл\n2 - расшифровать файл\n";
 		cin>> menu;
 	} while ((menu!=1)&&(menu!=2));
